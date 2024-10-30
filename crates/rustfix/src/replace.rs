@@ -99,7 +99,10 @@ pub struct Data<'a> {
 
 impl<'a> Data<'a> {
     /// Create a new data container from a slice of bytes
-    pub fn new(data: &'a [u8]) -> Self {
+    pub fn new<T>(data: &'a T) -> Self
+    where
+        T: AsRef<[u8]> + ?Sized,
+    {
         Data {
             original: data.as_ref(),
             parts: vec![],
@@ -146,7 +149,10 @@ impl<'a> Data<'a> {
     /// this method will return an error.
     /// It will also return an error if the beginning of the range comes before its end,
     /// or if the range is outside that of the original data.
-    pub fn replace_range(&mut self, range: Range<usize>, data: &'a [u8]) -> Result<(), Error> {
+    pub fn replace_range<T>(&mut self, range: Range<usize>, data: &'a T) -> Result<(), Error>
+    where
+        T: AsRef<[u8]> + ?Sized,
+    {
         if range.start > range.end {
             return Err(Error::InvalidRange(range));
         }
@@ -202,63 +208,63 @@ mod tests {
 
     #[test]
     fn insert_at_beginning() {
-        let mut d = Data::new(b"foo bar baz");
-        d.replace_range(0..0, b"oh no ").unwrap();
+        let mut d = Data::new("foo bar baz");
+        d.replace_range(0..0, "oh no ").unwrap();
         assert_eq!("oh no foo bar baz", str(&d.to_vec()));
     }
 
     #[test]
     fn insert_at_end() {
-        let mut d = Data::new(b"foo bar baz");
-        d.replace_range(11..11, b" oh no").unwrap();
+        let mut d = Data::new("foo bar baz");
+        d.replace_range(11..11, " oh no").unwrap();
         assert_eq!("foo bar baz oh no", str(&d.to_vec()));
     }
 
     #[test]
     fn replace_some_stuff() {
-        let mut d = Data::new(b"foo bar baz");
-        d.replace_range(4..7, b"lol").unwrap();
+        let mut d = Data::new("foo bar baz");
+        d.replace_range(4..7, "lol").unwrap();
         assert_eq!("foo lol baz", str(&d.to_vec()));
     }
 
     #[test]
     fn replace_a_single_char() {
-        let mut d = Data::new(b"let y = true;");
-        d.replace_range(4..5, b"mut y").unwrap();
+        let mut d = Data::new("let y = true;");
+        d.replace_range(4..5, "mut y").unwrap();
         assert_eq!("let mut y = true;", str(&d.to_vec()));
     }
 
     #[test]
     fn replace_multiple_lines() {
-        let mut d = Data::new(b"lorem\nipsum\ndolor");
+        let mut d = Data::new("lorem\nipsum\ndolor");
 
-        d.replace_range(6..11, b"lol").unwrap();
+        d.replace_range(6..11, "lol").unwrap();
         assert_eq!("lorem\nlol\ndolor", str(&d.to_vec()));
 
-        d.replace_range(12..17, b"lol").unwrap();
+        d.replace_range(12..17, "lol").unwrap();
         assert_eq!("lorem\nlol\nlol", str(&d.to_vec()));
     }
 
     #[test]
     fn replace_multiple_lines_with_insert_only() {
-        let mut d = Data::new(b"foo!");
+        let mut d = Data::new("foo!");
 
-        d.replace_range(3..3, b"bar").unwrap();
+        d.replace_range(3..3, "bar").unwrap();
         assert_eq!("foobar!", str(&d.to_vec()));
 
-        d.replace_range(0..3, b"baz").unwrap();
+        d.replace_range(0..3, "baz").unwrap();
         assert_eq!("bazbar!", str(&d.to_vec()));
 
-        d.replace_range(3..4, b"?").unwrap();
+        d.replace_range(3..4, "?").unwrap();
         assert_eq!("bazbar?", str(&d.to_vec()));
     }
 
     #[test]
     fn replace_invalid_range() {
-        let mut d = Data::new(b"foo!");
+        let mut d = Data::new("foo!");
 
-        assert!(d.replace_range(2..1, b"bar").is_err());
-        assert!(d.replace_range(0..3, b"bar").is_ok());
+        assert!(d.replace_range(2..1, "bar").is_err());
+        assert!(d.replace_range(0..3, "bar").is_ok());
     }
 
     #[test]
@@ -269,13 +275,13 @@ mod tests {
 
     #[test]
     fn replace_same_range_diff_data() {
-        let mut d = Data::new(b"foo bar baz");
+        let mut d = Data::new("foo bar baz");
 
-        d.replace_range(4..7, b"lol").unwrap();
+        d.replace_range(4..7, "lol").unwrap();
         assert_eq!("foo lol baz", str(&d.to_vec()));
 
         assert!(matches!(
-            d.replace_range(4..7, b"lol2").unwrap_err(),
+            d.replace_range(4..7, "lol2").unwrap_err(),
             Error::AlreadyReplaced {
                 is_identical: false,
                 ..
@@ -285,13 +291,13 @@ mod tests {
 
     #[test]
     fn replace_same_range_same_data() {
-        let mut d = Data::new(b"foo bar baz");
+        let mut d = Data::new("foo bar baz");
 
-        d.replace_range(4..7, b"lol").unwrap();
+        d.replace_range(4..7, "lol").unwrap();
         assert_eq!("foo lol baz", str(&d.to_vec()));
 
         assert!(matches!(
-            d.replace_range(4..7, b"lol").unwrap_err(),
+            d.replace_range(4..7, "lol").unwrap_err(),
             Error::AlreadyReplaced {
                 is_identical: true,
                 ..
@@ -301,20 +307,20 @@ mod tests {
 
     #[test]
     fn broken_replacements() {
-        let mut d = Data::new(b"foo");
+        let mut d = Data::new("foo");
         assert!(matches!(
-            d.replace_range(4..8, b"lol").unwrap_err(),
+            d.replace_range(4..8, "lol").unwrap_err(),
             Error::DataLengthExceeded(std::ops::Range { start: 4, end: 8 }, 3),
         ));
     }
 
     #[test]
     fn insert_same_twice() {
-        let mut d = Data::new(b"foo");
-        d.replace_range(1..1, b"b").unwrap();
+        let mut d = Data::new("foo");
+        d.replace_range(1..1, "b").unwrap();
         assert_eq!("fboo", str(&d.to_vec()));
         assert!(matches!(
-            d.replace_range(1..1, b"b").unwrap_err(),
+            d.replace_range(1..1, "b").unwrap_err(),
             Error::AlreadyReplaced {
                 is_identical: true,
                 ..
@@ -325,11 +331,11 @@ mod tests {
 
     #[test]
     fn commit_restore() {
-        let mut d = Data::new(b", ");
+        let mut d = Data::new(", ");
         assert_eq!(", ", str(&d.to_vec()));
 
-        d.replace_range(2..2, b"world").unwrap();
-        d.replace_range(0..0, b"hello").unwrap();
+        d.replace_range(2..2, "world").unwrap();
+        d.replace_range(0..0, "hello").unwrap();
         assert_eq!("hello, world", str(&d.to_vec()));
 
         d.restore();
@@ -338,14 +344,14 @@ mod tests {
         d.commit();
         assert_eq!(", ", str(&d.to_vec()));
 
-        d.replace_range(2..2, b"world").unwrap();
+        d.replace_range(2..2, "world").unwrap();
         assert_eq!(", world", str(&d.to_vec()));
         d.commit();
         assert_eq!(", world", str(&d.to_vec()));
         d.restore();
         assert_eq!(", world", str(&d.to_vec()));
 
-        d.replace_range(0..0, b"hello").unwrap();
+        d.replace_range(0..0, "hello").unwrap();
         assert_eq!("hello, world", str(&d.to_vec()));
         d.commit();
         assert_eq!("hello, world", str(&d.to_vec()));
@@ -356,7 +362,7 @@ mod tests {
     proptest! {
         #[test]
         fn new_to_vec_roundtrip(ref s in "\\PC*") {
-            assert_eq!(s.as_bytes(), Data::new(s.as_bytes()).to_vec().as_slice());
+            assert_eq!(s.as_bytes(), &Data::new(s).to_vec());
         }
 
         #[test]
@@ -367,7 +373,7 @@ mod tests {
                 1..100,
             )
         ) {
-            let mut d = Data::new(data.as_bytes());
+            let mut d = Data::new(data);
             for &(ref range, ref bytes) in replacements {
                 let _ = d.replace_range(range.clone(), bytes);
             }
