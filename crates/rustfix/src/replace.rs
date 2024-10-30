@@ -7,12 +7,12 @@
 //! which will validate that the changes do not conflict with one another.
 //! At any time, you can "checkpoint" the current changes with [`Data::commit`]
 //! or roll them back (perhaps due to a conflict) with [`Data::restore`].
-//! When you're done, use [`Data::to_vec`]
+//! When you're done, use [`Data::to_vec`] or [`Data::to_string`]
 //! to merge the original data with the changes.
 //!
 //! # Notes
 //!
-//! The [`Data::to_vec`] method includes uncommitted changes, if present.
+//! The [`Data::to_vec`] and [`Data::to_string`] methods include uncommitted changes, if present.
 //! The reason for including uncommitted changes is that typically, once you're calling those,
 //! you're done with edits and will be dropping the [`Data`] struct in a moment.
 //! In this case, requiring an extra call to `commit` would be unnecessary work.
@@ -142,6 +142,14 @@ impl<'a> Data<'a> {
         s
     }
 
+    /// Merge the original data with changes, **including** uncommitted changes,
+    /// and validate that the result is a valid UTF-8 string.
+    ///
+    /// See the module-level documentation for more information on why uncommitted changes are included.
+    pub fn to_string(&self) -> Result<String, Error> {
+        Ok(String::from_utf8(self.to_vec())?)
+    }
+
     /// Record a provisional change.
     ///
     /// If committed, the original data in the given `range` will be replaced by the given data.
@@ -202,36 +210,32 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    fn str(i: &[u8]) -> &str {
-        ::std::str::from_utf8(i).unwrap()
-    }
-
     #[test]
     fn insert_at_beginning() {
         let mut d = Data::new("foo bar baz");
         d.replace_range(0..0, "oh no ").unwrap();
-        assert_eq!("oh no foo bar baz", str(&d.to_vec()));
+        assert_eq!("oh no foo bar baz", &d.to_string().unwrap());
     }
 
     #[test]
     fn insert_at_end() {
         let mut d = Data::new("foo bar baz");
         d.replace_range(11..11, " oh no").unwrap();
-        assert_eq!("foo bar baz oh no", str(&d.to_vec()));
+        assert_eq!("foo bar baz oh no", &d.to_string().unwrap());
     }
 
     #[test]
     fn replace_some_stuff() {
         let mut d = Data::new("foo bar baz");
         d.replace_range(4..7, "lol").unwrap();
-        assert_eq!("foo lol baz", str(&d.to_vec()));
+        assert_eq!("foo lol baz", &d.to_string().unwrap());
     }
 
     #[test]
     fn replace_a_single_char() {
         let mut d = Data::new("let y = true;");
         d.replace_range(4..5, "mut y").unwrap();
-        assert_eq!("let mut y = true;", str(&d.to_vec()));
+        assert_eq!("let mut y = true;", &d.to_string().unwrap());
     }
 
     #[test]
@@ -239,10 +243,10 @@ mod tests {
         let mut d = Data::new("lorem\nipsum\ndolor");
 
         d.replace_range(6..11, "lol").unwrap();
-        assert_eq!("lorem\nlol\ndolor", str(&d.to_vec()));
+        assert_eq!("lorem\nlol\ndolor", &d.to_string().unwrap());
 
         d.replace_range(12..17, "lol").unwrap();
-        assert_eq!("lorem\nlol\nlol", str(&d.to_vec()));
+        assert_eq!("lorem\nlol\nlol", &d.to_string().unwrap());
     }
 
     #[test]
@@ -250,13 +254,13 @@ mod tests {
         let mut d = Data::new("foo!");
 
         d.replace_range(3..3, "bar").unwrap();
-        assert_eq!("foobar!", str(&d.to_vec()));
+        assert_eq!("foobar!", &d.to_string().unwrap());
 
         d.replace_range(0..3, "baz").unwrap();
-        assert_eq!("bazbar!", str(&d.to_vec()));
+        assert_eq!("bazbar!", &d.to_string().unwrap());
 
         d.replace_range(3..4, "?").unwrap();
-        assert_eq!("bazbar?", str(&d.to_vec()));
+        assert_eq!("bazbar?", &d.to_string().unwrap());
     }
 
     #[test]
@@ -268,9 +272,9 @@ mod tests {
     }
 
     #[test]
-    fn empty_to_vec_roundtrip() {
+    fn empty_to_string_roundtrip() {
         let s = "";
-        assert_eq!(s.as_bytes(), Data::new(s.as_bytes()).to_vec().as_slice());
+        assert_eq!(s, &Data::new(s).to_string().unwrap());
     }
 
     #[test]
@@ -278,7 +282,7 @@ mod tests {
         let mut d = Data::new("foo bar baz");
 
         d.replace_range(4..7, "lol").unwrap();
-        assert_eq!("foo lol baz", str(&d.to_vec()));
+        assert_eq!("foo lol baz", &d.to_string().unwrap());
 
         assert!(matches!(
             d.replace_range(4..7, "lol2").unwrap_err(),
@@ -294,7 +298,7 @@ mod tests {
         let mut d = Data::new("foo bar baz");
 
         d.replace_range(4..7, "lol").unwrap();
-        assert_eq!("foo lol baz", str(&d.to_vec()));
+        assert_eq!("foo lol baz", &d.to_string().unwrap());
 
         assert!(matches!(
             d.replace_range(4..7, "lol").unwrap_err(),
@@ -318,7 +322,7 @@ mod tests {
     fn insert_same_twice() {
         let mut d = Data::new("foo");
         d.replace_range(1..1, "b").unwrap();
-        assert_eq!("fboo", str(&d.to_vec()));
+        assert_eq!("fboo", &d.to_string().unwrap());
         assert!(matches!(
             d.replace_range(1..1, "b").unwrap_err(),
             Error::AlreadyReplaced {
@@ -326,43 +330,43 @@ mod tests {
                 ..
             },
         ));
-        assert_eq!("fboo", str(&d.to_vec()));
+        assert_eq!("fboo", &d.to_string().unwrap());
     }
 
     #[test]
     fn commit_restore() {
         let mut d = Data::new(", ");
-        assert_eq!(", ", str(&d.to_vec()));
+        assert_eq!(", ", &d.to_string().unwrap());
 
         d.replace_range(2..2, "world").unwrap();
         d.replace_range(0..0, "hello").unwrap();
-        assert_eq!("hello, world", str(&d.to_vec()));
+        assert_eq!("hello, world", &d.to_string().unwrap());
 
         d.restore();
-        assert_eq!(", ", str(&d.to_vec()));
+        assert_eq!(", ", &d.to_string().unwrap());
 
         d.commit();
-        assert_eq!(", ", str(&d.to_vec()));
+        assert_eq!(", ", &d.to_string().unwrap());
 
         d.replace_range(2..2, "world").unwrap();
-        assert_eq!(", world", str(&d.to_vec()));
+        assert_eq!(", world", &d.to_string().unwrap());
         d.commit();
-        assert_eq!(", world", str(&d.to_vec()));
+        assert_eq!(", world", &d.to_string().unwrap());
         d.restore();
-        assert_eq!(", world", str(&d.to_vec()));
+        assert_eq!(", world", &d.to_string().unwrap());
 
         d.replace_range(0..0, "hello").unwrap();
-        assert_eq!("hello, world", str(&d.to_vec()));
+        assert_eq!("hello, world", &d.to_string().unwrap());
         d.commit();
-        assert_eq!("hello, world", str(&d.to_vec()));
+        assert_eq!("hello, world", &d.to_string().unwrap());
         d.restore();
-        assert_eq!("hello, world", str(&d.to_vec()));
+        assert_eq!("hello, world", &d.to_string().unwrap());
     }
 
     proptest! {
         #[test]
-        fn new_to_vec_roundtrip(ref s in "\\PC*") {
-            assert_eq!(s.as_bytes(), &Data::new(s).to_vec());
+        fn new_to_string_roundtrip(ref s in "\\PC*") {
+            assert_eq!(s, &Data::new(s).to_string().unwrap());
         }
 
         #[test]
