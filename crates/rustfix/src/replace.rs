@@ -24,22 +24,21 @@
 //! If you want to discard uncommitted changes, simply call [`Data::restore`] first.
 
 use std::ops::Range;
-use std::rc::Rc;
 
 use crate::error::Error;
 
 /// Data that should replace a particular range of the original.
 #[derive(Clone)]
-struct Span {
+struct Span<'a> {
     /// Span of the parent data to be replaced, inclusive of the start, exclusive of the end.
     range: Range<usize>,
     /// New data to insert at the `start` position of the `original` data.
-    data: Rc<[u8]>,
+    data: &'a [u8],
     /// Whether this data is committed or provisional.
     committed: bool,
 }
 
-impl std::fmt::Debug for Span {
+impl<'a> std::fmt::Debug for Span<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let state = if self.is_insert() {
             "inserted"
@@ -61,11 +60,11 @@ impl std::fmt::Debug for Span {
     }
 }
 
-impl Span {
-    fn new(range: Range<usize>, data: &[u8]) -> Self {
+impl<'a> Span<'a> {
+    fn new(range: Range<usize>, data: &'a [u8]) -> Self {
         Self {
             range,
-            data: data.into(),
+            data,
             committed: false,
         }
     }
@@ -79,7 +78,7 @@ impl Span {
     }
 }
 
-impl PartialEq for Span {
+impl<'a> PartialEq for Span<'a> {
     /// Returns `true` if and only if this `Span` and `other` have the same range and data,
     /// regardless of `committed` status.
     fn eq(&self, other: &Self) -> bool {
@@ -89,20 +88,20 @@ impl PartialEq for Span {
 
 /// A container that allows easily replacing chunks of its data.
 #[derive(Debug, Clone, Default)]
-pub struct Data {
+pub struct Data<'a> {
     /// Original data.
-    original: Vec<u8>,
+    original: &'a [u8],
     /// [`Span`]s covering the full range of the original data.
     /// Important: it's expected that the underlying implementation maintains this in order,
     /// sorted ascending by start position.
-    parts: Vec<Span>,
+    parts: Vec<Span<'a>>,
 }
 
-impl Data {
+impl<'a> Data<'a> {
     /// Create a new data container from a slice of bytes
-    pub fn new(data: &[u8]) -> Self {
+    pub fn new(data: &'a [u8]) -> Self {
         Data {
-            original: data.into(),
+            original: data.as_ref(),
             parts: vec![],
         }
     }
@@ -130,7 +129,7 @@ impl Data {
             );
 
             acc.extend_from_slice(&self.original[prev_end..span.range.start]);
-            acc.extend_from_slice(&span.data);
+            acc.extend_from_slice(span.data);
             prev_end = span.range.end;
             acc
         });
@@ -147,7 +146,7 @@ impl Data {
     /// this method will return an error.
     /// It will also return an error if the beginning of the range comes before its end,
     /// or if the range is outside that of the original data.
-    pub fn replace_range(&mut self, range: Range<usize>, data: &[u8]) -> Result<(), Error> {
+    pub fn replace_range(&mut self, range: Range<usize>, data: &'a [u8]) -> Result<(), Error> {
         if range.start > range.end {
             return Err(Error::InvalidRange(range));
         }
